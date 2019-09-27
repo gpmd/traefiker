@@ -32,7 +32,7 @@ var AuthInfo sync.Map
 
 func main() {
 
-	log.Println("Starting...")
+	log.Println("Reading configuration...")
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")    // optionally look for config in the working directory
 	err := viper.ReadInConfig() // Find and read the config file
@@ -41,6 +41,12 @@ func main() {
 	}
 	conf := viper.GetStringMapString("traefiker")
 	dockerconf := viper.GetStringMapStringSlice("docker")
+	if conf["network"] != "" && len(dockerconf["networks"]) == 0 {
+		dockerconf["networks"] = []string{conf["network"]}
+	}
+	labelconf := viper.GetStringMapString("labels")
+
+	log.Println("Connecting to docker...")
 
 	cli, err := client.NewEnvClient()
 	E(err)
@@ -55,16 +61,12 @@ func main() {
 		log.Println(s.Image)
 	}
 
+	log.Println("Creating docker container...")
+
 	name, err := BuildDockerImage(ctx, conf, d.cli)
 	E(err)
 
-	d.Run(ctx, name, "", map[string]string{
-		"traefik.backend":              name,
-		"traefik.docker.network":       "traefik_web",
-		"traefik.frontend.rule":        "Host:" + conf["host"],
-		"traefik.frontend.entryPoints": "https",
-		"traefik.port":                 "80",
-	}, dockerconf)
+	d.Run(ctx, name, "", labelconf, dockerconf)
 	newid := ""
 	for _, s := range d.List() {
 		if _, ok := old[s.ID]; !ok {
@@ -81,26 +83,21 @@ func main() {
 	}
 }
 
+// Docker is base struct for the app
 type Docker struct {
 	cli  *client.Client
 	list []types.Container
 }
 
+// E is a generic error handler
 func E(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
+// Run starts the created container
 func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map[string]string, conf map[string][]string) string {
-	// hostBinding := nat.PortBinding{
-	// 	HostIP:   "0.0.0.0",
-	// 	HostPort: "8000",
-	// }
-	//	containerPort, err := nat.NewPort("tcp", "80")
-	// if err != nil {
-	// 	panic("Unable to get the port")
-	// }
 
 	if imageurl != "" {
 		reader, err := d.cli.ImagePull(ctx, imageurl, types.ImagePullOptions{})
@@ -113,7 +110,7 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 	nets, err := d.cli.NetworkList(ctx, types.NetworkListOptions{})
 	netid := ""
 	for _, n := range nets {
-		if n.Name == "traefik_web" {
+		if n.Name == conf["networks"][0] {
 			netid = n.ID
 		}
 	}
@@ -132,20 +129,32 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 		})
 	}
 
-	//	portBinding := nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
+	hostconfig := &container.HostConfig{
+		NetworkMode:   container.NetworkMode(conf["networks"][0]),
+		RestartPolicy: container.RestartPolicy{MaximumRetryCount: 0},
+		Mounts:        mm,
+	}
+
+	if len(conf["ports"]) > 0 {
+		//hostBinding := nat.PortBinding{
+		// 	HostIP:   "0.0.0.0",
+		// 	HostPort: "8000",
+		// }
+		//	containerPort, err := nat.NewPort("tcp", "80")
+		// if err != nil {
+		// 	panic("Unable to get the port")
+		// }
+		// hostconfig.PortBindings = nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
+	}
 	cont, err := d.cli.ContainerCreate(
 		context.Background(),
 		&container.Config{
 			Image:  imagename,
 			Labels: labels,
 		},
-		&container.HostConfig{
-			NetworkMode:   "traefik_web",
-			RestartPolicy: container.RestartPolicy{MaximumRetryCount: 0},
-			Mounts:        mm,
-			//			PortBindings: portBinding,
-			//			Links: []string{"traefik_mysql_1:mysql", "traefik_redis_1:redis"},
-		}, nil, imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
+		hostconfig,
+		nil,
+		imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
 	E(err)
 	d.cli.ContainerStart(ctx, cont.ID, types.ContainerStartOptions{})
 	d.cli.NetworkConnect(ctx,
@@ -170,6 +179,7 @@ func (d *Docker) List() []types.Container {
 	return d.list
 }
 
+// Kill running container by container ID
 func (d *Docker) StopContainer(ctx context.Context, containerID string) {
 	err := d.cli.ContainerStop(ctx, containerID, nil)
 	E(err)
@@ -285,9 +295,8 @@ func walkFnClosure(src string, tw *tar.Writer, buf *bytes.Buffer) filepath.WalkF
 	}
 }
 
+// BuildDockerImage builds a docker container using `conf`
 func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient) (string, error) {
-	// TODO: I dont like the way we are handling paths here.
-	// look at dirWithComposeFile in container.go
 	dockerFilePath := "./Dockerfile"
 
 	dockerFileReader, err := os.Open(dockerFilePath)
@@ -372,6 +381,6 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 	}
 
 	imageBuildResponse.Body.Close()
-	log.Println("built.")
+	log.Println("Build successful")
 	return imageName, nil
 }
