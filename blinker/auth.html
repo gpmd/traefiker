@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+    <header>
+        <script src="//cdn.bigcommerce.com/jssdk/bc-sdk.js"></script>
+        <link rel="stylesheet" type="text/css" href="//unpkg.com/bootstrap/dist/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.css"/>
+        <script>
+        Bigcommerce.init({
+            onLogout: function() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                    console.log(this.responseText);
+                }
+            };
+            xhttp.open("GET", "/logout", true);
+            xhttp.send();
+        }
+        });
+    </script>
+    <style>
+        nav {
+        background-color: #1d3650;
+        margin: 0 0 10px 0;
+        padding: 5px;
+        color: white;
+    }
+    </style>
+    </header>
+    <body>
+            <nav>
+                <h2>Welcome!</h2>
+            </nav>
+            <p>Please reload the page if it doesn't reload.</p>
+            <script>
+                window.opener.location.reload(false);
+            </script>
+    </body>
+</html>

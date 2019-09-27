@@ -1,0 +1,11 @@
+traefiker:
+  name: blinker                                              # Docker container name
+docker:
+  links: ["traefik_mysql_1:mysql", "traefik_redis_1:redis"]  # Linked containers, "docker_name:internal_name" format
+  networks: ["traefik_web"]
+labels:
+		traefik.backend:              blinker                    # Same as traefiker.name above
+		traefik.docker.network:       traefik_web                # Same as traefiker.network above
+		traefik.frontend.rule:        Host: linker.gpmd.net
+		traefik.frontend.entryPoints: https
+		traefik.port:                 80                         # exposed port from Docker image

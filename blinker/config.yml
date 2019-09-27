@@ -1,0 +1,17 @@
+balanceme:
+  db: root:myohmy69@(mysql:3306)/blinker?parseTime=true
+  client: 27t27zo6uxju556q6biq9a6129dryjg
+  token: 1u4bq84z36psc8q6npidp8gt7vc2m5k
+  store: o1p74e2tyg
+  redis: redis:6379
+  hostname: blinker.gpmd.net
+  ssl: false
+auth:
+  auth_url: https://login.bigcommerce.com/oauth2/authorize
+  token_url: https://login.bigcommerce.com/oauth2/token
+
+  scopes: # https://developer.bigcommerce.com/api-docs/getting-started/authentication#authentication_oauth-scopes
+  - store_v2_content_read_only
+  - store_v2_default
+  - store_v2_products_read_only
+  - users_basic_information
