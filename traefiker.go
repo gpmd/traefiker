@@ -45,6 +45,14 @@ func main() {
 		dockerconf["networks"] = []string{conf["network"]}
 	}
 	labelconf := viper.GetStringMapString("labels")
+	// hotfix for entryPoints
+	for k, v := range labelconf {
+		if strings.Contains(k, "entrypoints") {
+			k2 := strings.Replace(k, "entrypoints", "entryPoints", -1)
+			delete(labelconf, k)
+			labelconf[k2] = v
+		}
+	}
 
 	log.Println("Connecting to docker...")
 
@@ -149,8 +157,9 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 	cont, err := d.cli.ContainerCreate(
 		context.Background(),
 		&container.Config{
-			Image:  imagename,
-			Labels: labels,
+			Hostname: imagename + ".docker.localhost",
+			Image:    imagename,
+			Labels:   labels,
 		},
 		hostconfig,
 		nil,
