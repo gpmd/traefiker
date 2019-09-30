@@ -188,7 +188,7 @@ func (d *Docker) List() []types.Container {
 	return d.list
 }
 
-// Kill running container by container ID
+// StopContainer stops container by container ID
 func (d *Docker) StopContainer(ctx context.Context, containerID string) {
 	err := d.cli.ContainerStop(ctx, containerID, nil)
 	E(err)
