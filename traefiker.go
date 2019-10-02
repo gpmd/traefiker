@@ -25,10 +25,14 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+
+	"github.com/shoobyban/filehelper"
 )
 
 // AuthInfo stores a users' docker registry/hub info
 var AuthInfo sync.Map
+
+var running = map[string]string{}
 
 func main() {
 
@@ -67,6 +71,7 @@ func main() {
 			old[s.ID] = s.ID
 		}
 		log.Println(s.Image)
+		running[s.Image] = s.Names[0]
 	}
 
 	log.Println("Creating docker container...")
@@ -115,13 +120,13 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 		io.Copy(os.Stdout, reader)
 	}
 
-	nets, err := d.cli.NetworkList(ctx, types.NetworkListOptions{})
-	netid := ""
-	for _, n := range nets {
-		if n.Name == conf["networks"][0] {
-			netid = n.ID
-		}
-	}
+	// nets, err := d.cli.NetworkList(ctx, types.NetworkListOptions{})
+	// netid := ""
+	// for _, n := range nets {
+	// 	if n.Name == conf["networks"][0] {
+	// 		netid = n.ID
+	// 	}
+	// }
 
 	mm := []mount.Mount{}
 
@@ -154,6 +159,16 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 		// }
 		// hostconfig.PortBindings = nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
 	}
+
+	links := []string{}
+	for _, l := range conf["links"] {
+		l2, err := filehelper.Template(l, running)
+		if err != nil {
+			log.Fatalf("Error in parsing link templates: %v", err)
+		}
+		links = append(links, l2)
+	}
+
 	cont, err := d.cli.ContainerCreate(
 		context.Background(),
 		&container.Config{
@@ -162,18 +177,17 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 			Labels:   labels,
 		},
 		hostconfig,
-		nil,
+		&network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				conf["networks"][0]: &network.EndpointSettings{
+					Links:   links,
+					Aliases: []string{imagename},
+				},
+			},
+		},
 		imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
 	E(err)
 	d.cli.ContainerStart(ctx, cont.ID, types.ContainerStartOptions{})
-	d.cli.NetworkConnect(ctx,
-		netid,
-		cont.ID,
-		&network.EndpointSettings{
-			Links: conf["links"],
-		},
-	)
-	fmt.Println("Links:", conf["links"])
 	return cont.ID
 }
 

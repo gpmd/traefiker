@@ -9,6 +9,7 @@ require (
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
+	github.com/shoobyban/filehelper v0.0.0-20190509122806-291f797b4fe9
 	github.com/spf13/viper v1.4.0
 	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297 // indirect
 )
