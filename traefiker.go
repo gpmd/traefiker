@@ -143,10 +143,11 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 	}
 
 	hostconfig := &container.HostConfig{
-		NetworkMode:   container.NetworkMode(conf["networks"][0]),
 		RestartPolicy: container.RestartPolicy{MaximumRetryCount: 0},
 		Mounts:        mm,
 	}
+
+	var nc *network.NetworkingConfig
 
 	if len(conf["ports"]) > 0 {
 		//hostBinding := nat.PortBinding{
@@ -169,6 +170,18 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 		links = append(links, l2)
 	}
 
+	if len(conf["networks"]) > 0 {
+		hostconfig.NetworkMode = container.NetworkMode(conf["networks"][0])
+		nc = &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				conf["networks"][0]: &network.EndpointSettings{
+					Links:   links,
+					Aliases: []string{imagename},
+				},
+			},
+		}
+	}
+
 	cont, err := d.cli.ContainerCreate(
 		context.Background(),
 		&container.Config{
@@ -177,17 +190,11 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 			Labels:   labels,
 		},
 		hostconfig,
-		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				conf["networks"][0]: &network.EndpointSettings{
-					Links:   links,
-					Aliases: []string{imagename},
-				},
-			},
-		},
+		nc,
 		imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
 	E(err)
-	d.cli.ContainerStart(ctx, cont.ID, types.ContainerStartOptions{})
+	err = d.cli.ContainerStart(ctx, cont.ID, types.ContainerStartOptions{})
+	E(err)
 	return cont.ID
 }
 
@@ -268,7 +275,7 @@ func poolReadFrom(r io.Reader) (n int64, err error) {
 
 func walkFnClosure(src string, tw *tar.Writer, buf *bytes.Buffer) filepath.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
-		log.Println("Walking in ", path)
+		// log.Println("Walking in ", path)
 		if err != nil {
 			// todo: maybe we should return nil
 			return err
@@ -394,10 +401,12 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 	for scanner.Scan() {
 		_ = json.Unmarshal(scanner.Bytes(), &imgProg)
 		log.Println(
-			"Build",
-			imgProg.Status,
-			imgProg.Progress,
-			imgProg.Stream)
+			"Build\033[33m",
+			strings.TrimRight(imgProg.Status, "\n"),
+			strings.TrimRight(imgProg.Progress, "\n"),
+			strings.TrimRight(imgProg.Stream, "\n"),
+			"\033[0m",
+		)
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Println(" :unable to log output for image", imageName, err)
