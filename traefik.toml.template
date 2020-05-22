@@ -1,0 +1,45 @@
+defaultEntryPoints = ["http"{{if .https}}, "https"{{end}}]
+{{if .log}}
+[log]
+  level = "debug"
+
+[accessLog]
+  filePath = "access.log"
+{{end}}
+[entryPoints]
+  [entryPoints.http]
+  address = ":80"
+
+{{if .https}}
+  [entryPoints.https]
+  address = ":443"
+{{end}}
+
+[api]
+  dashboard = true
+  insecure = true
+{{if .log}}  debug = true{{end}}
+
+[providers]
+  [providers.docker]
+    exposedByDefault = false
+    network = "web"
+    endpoint = "unix:///var/run/docker.sock"
+    watch = true
+{{if .https}}
+[tls.stores]
+  [tls.stores.default]
+
+[certificatesResolvers.le.acme]
+  email = "{{index .https 0}}"
+  storage = "acme/acme.json"
+  [certificatesResolvers.le.acme.httpChallenge]
+    entryPoint = "http"
+
+[[acme.domains]]
+    main = "{{index .https 1}}"
+{{if gt (len .https) 2}}    sans = [ {{range $k, $v := .https}}{{if gt $k 1}}{{if gt $k 2}},{{end}}"{{$v}}"{{end}}{{end}} ]{{end}}
+
+[acme]
+  caServer = "https://acme-v02.api.letsencrypt.org/directory"
+{{end}}

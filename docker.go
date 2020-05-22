@@ -11,90 +11,21 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"path/filepath"
-
-	"github.com/spf13/viper"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
-
-	"github.com/shoobyban/filehelper"
+	"github.com/docker/go-connections/nat"
+	"github.com/gpmd/filehelper"
 )
-
-// AuthInfo stores a users' docker registry/hub info
-var AuthInfo sync.Map
-
-var running = map[string]string{}
-
-func main() {
-
-	log.Println("Reading configuration...")
-	viper.SetConfigName("config")
-	viper.AddConfigPath(".")    // optionally look for config in the working directory
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
-		panic(fmt.Errorf("fatal error config file: %v", err))
-	}
-	conf := viper.GetStringMapString("traefiker")
-	dockerconf := viper.GetStringMapStringSlice("docker")
-	if conf["network"] != "" && len(dockerconf["networks"]) == 0 {
-		dockerconf["networks"] = []string{conf["network"]}
-	}
-	labelconf := viper.GetStringMapString("labels")
-	// hotfix for entryPoints
-	for k, v := range labelconf {
-		if strings.Contains(k, "entrypoints") {
-			k2 := strings.Replace(k, "entrypoints", "entryPoints", -1)
-			delete(labelconf, k)
-			labelconf[k2] = v
-		}
-	}
-
-	log.Println("Connecting to docker...")
-
-	cli, err := client.NewEnvClient()
-	E(err)
-	ctx := context.Background()
-	d := Docker{cli: cli}
-
-	old := map[string]string{}
-	for _, s := range d.List() {
-		if s.Image == conf["name"] {
-			old[s.ID] = s.ID
-		}
-		log.Println(s.Image)
-		running[s.Image] = s.Names[0]
-	}
-
-	log.Println("Creating docker container...")
-
-	name, err := BuildDockerImage(ctx, conf, d.cli)
-	E(err)
-
-	d.Run(ctx, name, "", labelconf, dockerconf)
-	newid := ""
-	for _, s := range d.List() {
-		if _, ok := old[s.ID]; !ok {
-			if s.Image == name {
-				newid = s.ID
-			}
-		}
-	}
-	if newid != "" {
-		for _, id := range old {
-			log.Println("Stopping", id)
-			d.StopContainer(ctx, id)
-		}
-	}
-}
 
 // Docker is base struct for the app
 type Docker struct {
@@ -102,15 +33,8 @@ type Docker struct {
 	list []types.Container
 }
 
-// E is a generic error handler
-func E(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 // Run starts the created container
-func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map[string]string, conf map[string][]string) string {
+func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[string]string, conf map[string][]string) string {
 
 	if imageurl != "" {
 		reader, err := d.cli.ImagePull(ctx, imageurl, types.ImagePullOptions{})
@@ -118,6 +42,12 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 			panic(err)
 		}
 		io.Copy(os.Stdout, reader)
+	}
+
+	imagename := image
+	if strings.Contains(imagename, ":") {
+		parts := strings.Split(imagename, ":")
+		imagename = parts[0]
 	}
 
 	// nets, err := d.cli.NetworkList(ctx, types.NetworkListOptions{})
@@ -130,10 +60,17 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 
 	mm := []mount.Mount{}
 
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
 	for _, l := range conf["mounts"] {
 		ll := strings.Split(l, ":")
 		if len(ll) != 2 {
 			log.Panicf("Mounts in config.yml (%v) have line %s where 'from:to' is not correct", conf["mounts"], l)
+		}
+		if strings.HasPrefix(ll[0], "./") {
+			ll[0] = wd + strings.TrimPrefix(ll[0], ".")
 		}
 		mm = append(mm, mount.Mount{
 			Type:   mount.TypeBind,
@@ -149,16 +86,26 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 
 	var nc *network.NetworkingConfig
 
+	type emptyStruct struct{}
+
+	portsMap := make(map[nat.Port]struct{})
+	m := make(map[nat.Port][]nat.PortBinding)
+
 	if len(conf["ports"]) > 0 {
-		//hostBinding := nat.PortBinding{
-		// 	HostIP:   "0.0.0.0",
-		// 	HostPort: "8000",
-		// }
-		//	containerPort, err := nat.NewPort("tcp", "80")
-		// if err != nil {
-		// 	panic("Unable to get the port")
-		// }
-		// hostconfig.PortBindings = nat.PortMap{containerPort: []nat.PortBinding{hostBinding}}
+		for _, v := range conf["ports"] {
+			parts := strings.Split(v, ":")
+			hostBinding := nat.PortBinding{
+				HostIP:   "0.0.0.0",
+				HostPort: parts[0],
+			}
+			containerPort, err := nat.NewPort("tcp", parts[1])
+			if err != nil {
+				panic("Unable to get the port")
+			}
+			portsMap[containerPort] = emptyStruct{}
+			m[containerPort] = []nat.PortBinding{hostBinding}
+		}
+		hostconfig.PortBindings = m
 	}
 
 	links := []string{}
@@ -181,14 +128,18 @@ func (d *Docker) Run(ctx context.Context, imagename, imageurl string, labels map
 			},
 		}
 	}
-
+	cfg := container.Config{
+		Hostname:     imagename + ".docker.localhost",
+		Image:        image,
+		Labels:       labels,
+		ExposedPorts: portsMap,
+	}
+	if len(conf["command"]) > 0 {
+		cfg.Cmd = strslice.StrSlice(conf["command"])
+	}
 	cont, err := d.cli.ContainerCreate(
 		context.Background(),
-		&container.Config{
-			Hostname: imagename + ".docker.localhost",
-			Image:    imagename,
-			Labels:   labels,
-		},
+		&cfg,
 		hostconfig,
 		nc,
 		imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
@@ -215,7 +166,7 @@ func (d *Docker) StopContainer(ctx context.Context, containerID string) {
 	E(err)
 }
 
-// APIClient is meli's client to interact with the docker daemon server
+// APIClient is meli's client interface to interact with the docker daemon server
 type APIClient interface {
 	// we implement this interface so that we can be able to mock it in tests
 	// https://medium.com/@zach_4342/dependency-injection-in-golang-e587c69478a8
@@ -409,10 +360,10 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 		)
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Println(" :unable to log output for image", imageName, err)
+		log.Println(" :unable to log output for image", imageName, err)
+		return "", fmt.Errorf("unable to build due logging error %v", err)
 	}
 
 	imageBuildResponse.Body.Close()
-	log.Println("Build successful")
 	return imageName, nil
 }

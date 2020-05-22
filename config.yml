@@ -1,0 +1,13 @@
+---
+docker:
+    https: # remove this and 443 port before for local dev setup
+        - john@doe.com
+        - domain.com
+        - domain.io
+    mounts:
+        - "/var/run/docker.sock:/var/run/docker.sock"
+        - "./traefik.toml:/traefik.toml"
+    ports:
+        - 80:80
+        - 443:443
+        - 8080:8080
