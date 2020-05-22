@@ -60,7 +60,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "server":
-			server()
+			server(ctx, d, conf)
 		case "traefik":
 			traefik(ctx, d, dockerconf)
 		}

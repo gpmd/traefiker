@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Traefiker</title>
+    <script src="//unpkg.com/vue"></script>
+    <script src="//unpkg.com/axios/dist/axios.min.js"></script>
+    <link type="text/css" rel="stylesheet" href="//unpkg.com/bootstrap/dist/css/bootstrap.min.css" />
+    <link type="text/css" rel="stylesheet" href="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.css" />
+    <script src="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.js"></script>
+    <script src="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue-icons.min.js"></script>
+</head>
+
+<body class="bg-light">
+    <div id="app">
+        <div class="container mt-5">
+            <div class="d-flex align-items-center p-3 my-3 rounded shadow-sm">
+                <div>
+                    <h6 class="mb-0 lh-100">Traefik</h6>
+                </div>
+            </div>
+            <div class="card" v-for="(v, i) in running" :key="i">
+                <div class="m-3">
+                    <div v-b-toggle="v.Id">
+                        <h5>{{v.Names[0].replace('/','')}}</h5>
+                        <h6>{{v.Image}}</h6>
+                    </div>
+                    <b-collapse :id="v.Id">
+                        <p>Command: {{v.Command}}</p>
+                        <div class="card m-2">
+                            <h6>Ports</h6>
+                            <div class="m-2">
+                                <span class="badge b-form-tag d-inline-flex align-items-baseline mw-100 mt-1 mr-1 badge-primary badge-pill" v-for="(p, j) in v.Ports" :key="j">
+                                {{p.PublicPort}}:{{p.PrivatePort}}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card m-2">
+                            <h6>Mounts</h6>
+                            <div class="m-2" v-for="(m, j) in v.Mounts" :key="j">
+                                {{m.Source}} => {{m.Destination}}
+                            </div>
+                        </div>
+                        <div class="card m-2">
+                            <h6>Labels</h6>
+                            <div class="m-2" v-for="(l, j) in v.Labels" :key="j">
+                                <b>{{j}}:</b> {{l}}
+                            </div>
+                        </div>
+                    </b-collapse>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: "#app",
+            data: {
+                running: []
+            },
+            mounted() {
+                this.update()
+            },
+            methods: {
+                update() {
+                    axios.get('/details').then(res => {
+                        this.running = res.data
+                    })
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

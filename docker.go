@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,6 +26,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/gpmd/filehelper"
+	"github.com/shoobyban/slog"
 )
 
 // Docker is base struct for the app
@@ -327,9 +329,8 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 	if err != nil {
 		return "", fmt.Errorf("unable to walk user provided context path %v: %v", UserProvidedContextPath, err)
 	}
-	log.Println("Len:", len(buf.Bytes()))
 	dockerFileTarReader := bytes.NewReader(buf.Bytes())
-	log.Println("building...")
+	slog.Infof("building '%s'...", imageName)
 	imageBuildResponse, err := cli.ImageBuild(
 		ctx,
 		dockerFileTarReader,
@@ -339,18 +340,27 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 			Tags:           []string{imageName},
 			Remove:         true, //remove intermediary containers after build
 			NoCache:        true,
+			PullParent:     true,
 			SuppressOutput: false,
 			Dockerfile:     "./Dockerfile",
 			Context:        dockerFileTarReader,
 			AuthConfigs:    AuthConfigs})
 	if err != nil {
-		return "", fmt.Errorf("unable to build docker image '%v' for service '%v': %v", imageName, os.Args[1], err)
+		log.Fatal(err)
 	}
+	defer imageBuildResponse.Body.Close()
 
 	var imgProg imageProgress
 	scanner := bufio.NewScanner(imageBuildResponse.Body)
+	if err := scanner.Err(); err != nil {
+		panic(err)
+	}
+	var success bool
 	for scanner.Scan() {
-		_ = json.Unmarshal(scanner.Bytes(), &imgProg)
+		err = json.Unmarshal(scanner.Bytes(), &imgProg)
+		if err != nil {
+			panic(err)
+		}
 		log.Println(
 			"Build\033[33m",
 			strings.TrimRight(imgProg.Status, "\n"),
@@ -358,12 +368,15 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 			strings.TrimRight(imgProg.Stream, "\n"),
 			"\033[0m",
 		)
-	}
-	if err := scanner.Err(); err != nil {
-		log.Println(" :unable to log output for image", imageName, err)
-		return "", fmt.Errorf("unable to build due logging error %v", err)
+		imgProg.Status = ""
+		if strings.HasPrefix(imgProg.Stream, "Successfully tagged") {
+			success = true
+		}
 	}
 
-	imageBuildResponse.Body.Close()
+	if !success {
+		return "", errors.New("Error building container")
+	}
+
 	return imageName, nil
 }
