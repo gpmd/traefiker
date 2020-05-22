@@ -357,10 +357,7 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 	}
 	var success bool
 	for scanner.Scan() {
-		err = json.Unmarshal(scanner.Bytes(), &imgProg)
-		if err != nil {
-			panic(err)
-		}
+		json.Unmarshal(scanner.Bytes(), &imgProg)
 		log.Println(
 			"Build\033[33m",
 			strings.TrimRight(imgProg.Status, "\n"),
