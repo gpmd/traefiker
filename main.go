@@ -26,7 +26,7 @@ func E(err error) {
 }
 
 func main() {
-
+	log.Println("Version 0.1.1")
 	dockerconf := map[string][]string{}
 	conf := map[string]string{}
 	labelconf := map[string]string{}
