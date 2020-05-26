@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/spf13/viper"
 
 	"github.com/docker/docker/client"
 )
@@ -28,30 +25,34 @@ func E(err error) {
 
 func main() {
 
-	log.Println("Reading configuration...")
-	viper.SetConfigName("config")
-	viper.AddConfigPath(".")    // optionally look for config in the working directory
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
-		panic(fmt.Errorf("fatal error config file: %v", err))
-	}
-	conf := viper.GetStringMapString("traefiker")
-	dockerconf := viper.GetStringMapStringSlice("docker")
-	if conf["network"] != "" && len(dockerconf["networks"]) == 0 {
-		dockerconf["networks"] = []string{conf["network"]}
-	}
-	labelconf := viper.GetStringMapString("labels")
+	// log.Println("Reading configuration...")
+	// viper.SetConfigName("config")
+	// viper.AddConfigPath(".")    // optionally look for config in the working directory
+	// err := viper.ReadInConfig() // Find and read the config file
+	// if err != nil {             // Handle errors reading the config file
+	// 	panic(fmt.Errorf("fatal error config file: %v", err))
+	// }
+	// conf := viper.GetStringMapString("traefiker")
+	// dockerconf := viper.GetStringMapStringSlice("docker")
+	// if conf["network"] != "" && len(dockerconf["networks"]) == 0 {
+	// 	dockerconf["networks"] = []string{conf["network"]}
+	// }
+	// labelconf := viper.GetStringMapString("labels")
 	// hotfix for entryPoints
-	for k, v := range labelconf {
-		if strings.Contains(k, "entrypoints") {
-			k2 := strings.Replace(k, "entrypoints", "entryPoints", -1)
-			delete(labelconf, k)
-			labelconf[k2] = v
-		}
-	}
 
-	log.Println("Connecting to docker...")
+	// for k, v := range labelconf {
+	// 	if strings.Contains(k, "entrypoints") {
+	// 		k2 := strings.Replace(k, "entrypoints", "entryPoints", -1)
+	// 		delete(labelconf, k)
+	// 		labelconf[k2] = v
+	// 	}
+	// }
 
+	// log.Println("Connecting to docker...")
+
+	dockerconf := map[string][]string{}
+	conf := map[string]string{}
+	labelconf := map[string]string{}
 	cli, err := client.NewEnvClient()
 	E(err)
 	ctx := context.Background()
@@ -59,9 +60,9 @@ func main() {
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "server":
+		case "dashboard":
 			server(ctx, d, conf)
-		case "traefik":
+		case "start":
 			traefik(ctx, d, dockerconf)
 		}
 		return

@@ -26,7 +26,6 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/gpmd/filehelper"
-	"github.com/shoobyban/slog"
 )
 
 // Docker is base struct for the app
@@ -131,7 +130,7 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 		}
 	}
 	cfg := container.Config{
-		Hostname:     imagename + ".docker.localhost",
+		Hostname:     imagename,
 		Image:        image,
 		Labels:       labels,
 		ExposedPorts: portsMap,
@@ -330,7 +329,7 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 		return "", fmt.Errorf("unable to walk user provided context path %v: %v", UserProvidedContextPath, err)
 	}
 	dockerFileTarReader := bytes.NewReader(buf.Bytes())
-	slog.Infof("building '%s'...", imageName)
+	log.Printf("building '%s'...\n", imageName)
 	imageBuildResponse, err := cli.ImageBuild(
 		ctx,
 		dockerFileTarReader,
@@ -366,6 +365,7 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 			"\033[0m",
 		)
 		imgProg.Status = ""
+		imgProg.Progress = ""
 		if strings.HasPrefix(imgProg.Stream, "Successfully tagged") {
 			success = true
 		}

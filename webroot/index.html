@@ -23,7 +23,8 @@
             <div class="card" v-for="(v, i) in running" :key="i">
                 <div class="m-3">
                     <div v-b-toggle="v.Id">
-                        <h5>{{v.Names[0].replace('/','')}}</h5>
+                        <h5 v-if="v.Labels['org.opencontainers.image.title']">{{v.Labels['org.opencontainers.image.title']}}</h5>
+                        <h5 v-else>{{v.Names[0].replace('/','')}}</h5>
                         <h6>{{v.Image}}</h6>
                     </div>
                     <b-collapse :id="v.Id">
