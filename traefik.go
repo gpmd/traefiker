@@ -32,6 +32,8 @@ func traefik(ctx context.Context, d Docker, dockerconf map[string][]string) {
 	fs.Var(&tlsports, "tlsport", "https port the service will listen on, can have multiple entries like -p 443 -p 8443")
 	var redir string
 	fs.StringVar(&redir, "tlsredir", "", "tls redirect if necessary, format: 80:443")
+	var acme bool
+	fs.BoolVar(&acme, "acme", false, "Let's Encrypt TLS")
 	err := fs.Parse(os.Args[2:])
 	if err != nil {
 		panic(err)
@@ -80,8 +82,8 @@ func traefik(ctx context.Context, d Docker, dockerconf map[string][]string) {
 	}
 	if acme {
 		dockerconf["command"] = append(dockerconf["command"], "--certificatesresolvers.myresolver.acme.email=your-email@example.com")
-		--certificatesresolvers.myresolver.acme.storage=acme.json
-		--certificatesresolvers.myresolver.acme.tlschallenge=true")
+		dockerconf["command"] = append(dockerconf["command"], "--certificatesresolvers.myresolver.acme.storage=acme.json")
+		dockerconf["command"] = append(dockerconf["command"], "--certificatesresolvers.myresolver.acme.tlschallenge=true")
 	}
 	if redir != "" {
 		parts := strings.Split(redir, ":")
