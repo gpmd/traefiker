@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"flag"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
 
-	"github.com/gpmd/filehelper"
 	"github.com/shoobyban/slog"
 )
 
@@ -39,41 +37,38 @@ func traefik(ctx context.Context, d Docker, dockerconf map[string][]string) {
 		panic(err)
 	}
 
-	t, err := filehelper.ProcessTemplateFile("traefik.toml.template", dockerconf)
-	if err != nil {
-		panic(err)
-	}
-	os.MkdirAll("server", 0755)
-	err = ioutil.WriteFile("server/traefik.toml", t, 0755)
-	if err != nil {
-		panic(err)
-	}
 	var id string
 	for _, s := range d.List() {
-		if s.Image == "traefik:latest" || strings.HasPrefix(s.Names[0], "/traefik_") {
-			slog.Infof("names %v", s.Names)
+		if s.Image == "traefik:latest" || strings.HasPrefix(s.Names[0], "/traefik_") || s.Names[0] == "traefik" {
+			slog.Infof("found ID:%s %s", s.ID, s.Names[0])
 			id = s.ID
 			break
 		}
 	}
+
 	if id != "" {
 		d.StopContainer(ctx, id)
 	}
 	dockerconf["command"] = []string{
 		"traefik",
-		"--providers.docker=true",
 		"--global.checknewversion=false",
 		"--global.sendanonymoususage=false",
 		"--log.level=DEBUG",
 		"--api=true",
 		"--api.insecure=true",
 	}
-	dockerconf["networks"] = append(dockerconf["networks"], "traefik")
-	dockerconf["mounts"] = append(dockerconf["mounts"], "/var/run/docker.sock:/var/run/docker.sock")
-	dockerconf["ports"] = append(dockerconf["ports"], "8080:8080")
-	for _, p := range ports {
-		dockerconf["ports"] = append(dockerconf["ports"], p+":"+p)
-		dockerconf["command"] = append(dockerconf["command"], "--entrypoints.port"+p+".address=:"+p)
+	switch d.mode {
+	case ModeDocker:
+		dockerconf["command"] = append(dockerconf["command"], "--providers.docker=true")
+		dockerconf["mounts"] = append(dockerconf["mounts"], "/var/run/docker.sock:/var/run/docker.sock")
+		dockerconf["networks"] = append(dockerconf["networks"], "traefik")
+		dockerconf["ports"] = append(dockerconf["ports"], "8080:8080")
+		for _, p := range ports {
+			dockerconf["ports"] = append(dockerconf["ports"], p+":"+p)
+			dockerconf["command"] = append(dockerconf["command"], "--entrypoints.port"+p+".address=:"+p)
+		}
+	case ModeStatic:
+		dockerconf["command"] = append(dockerconf["command"], "--providers.redis=true")
 	}
 	for _, p := range tlsports {
 		dockerconf["ports"] = append(dockerconf["ports"], p+":"+p)
@@ -111,6 +106,11 @@ func traefik(ctx context.Context, d Docker, dockerconf map[string][]string) {
 		dockerconf["command"] = append(dockerconf["command"], "--entrypoints.web.port"+parts[0]+".redirections.entrypoint.to=port"+parts[1])
 		dockerconf["command"] = append(dockerconf["command"], "--entrypoints.web.port"+parts[0]+".redirections.entrypoint.scheme=https")
 	}
-	slog.Infof("conf: %v", dockerconf)
-	d.Run(ctx, "traefik:latest", "docker.io/library/traefik:latest", map[string]string{}, dockerconf)
+
+	switch d.mode {
+	case ModeDocker:
+		d.Run(ctx, "traefik:latest", "docker.io/library/traefik:latest", map[string]string{}, dockerconf)
+	case ModeStatic:
+		d.Run(ctx, "traefik", "", map[string]string{}, dockerconf)
+	}
 }

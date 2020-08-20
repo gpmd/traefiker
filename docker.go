@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -26,17 +27,59 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/gpmd/filehelper"
+	"github.com/mitchellh/go-ps"
 )
+
+type Mode string
+
+var ModeDocker = Mode("docker")
+var ModeStatic = Mode("static")
 
 // Docker is base struct for the app
 type Docker struct {
 	cli  *client.Client
 	list []types.Container
+	mode Mode
 }
 
 // Run starts the created container
 func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[string]string, conf map[string][]string) string {
-
+	log.Println("Running", image, imageurl, labels, conf)
+	if d.mode == ModeStatic {
+		rpipe, _, err := os.Pipe()
+		E(err)
+		nullFile, err := os.Open(os.DevNull)
+		E(err)
+		wd, err := os.Getwd()
+		E(err)
+		attr := &os.ProcAttr{
+			Dir: wd,
+			Env: os.Environ(),
+			Files: []*os.File{
+				rpipe,     // (0) stdin
+				os.Stdout, // (1) stdout
+				os.Stderr, // (2) stderr
+				nullFile,  // (3) dup on fd 0 after initialization
+			},
+			Sys: &syscall.SysProcAttr{
+				//Chroot:     d.Chroot,
+				Credential: nil,
+				Setsid:     true,
+			},
+		}
+		child, err := os.StartProcess("/usr/local/bin/"+conf["command"][0], conf["command"], attr)
+		E(err)
+		defer rpipe.Close()
+		log.Printf("PID: %d", child.Pid)
+		time.Sleep(3 * time.Second)
+		p, err := ps.FindProcess(child.Pid)
+		E(err)
+		if p != nil {
+			log.Printf("Process still there: %v", p)
+			return ""
+		}
+		panic("Process died")
+	}
 	if imageurl != "" {
 		reader, err := d.cli.ImagePull(ctx, imageurl, types.ImagePullOptions{})
 		if err != nil {
@@ -152,6 +195,18 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 
 // List lists all containers
 func (d *Docker) List() []types.Container {
+	if d.mode == ModeStatic {
+		d.list = []types.Container{}
+		plist, err := ps.Processes()
+		E(err)
+		for _, p := range plist {
+			d.list = append(d.list, types.Container{
+				Names: []string{p.Executable()},
+				ID:    strconv.Itoa(p.Pid()),
+			})
+		}
+		return d.list
+	}
 	containers, err := d.cli.ContainerList(context.Background(), types.ContainerListOptions{})
 	E(err)
 	d.list = []types.Container{}
@@ -163,6 +218,19 @@ func (d *Docker) List() []types.Container {
 
 // StopContainer stops container by container ID
 func (d *Docker) StopContainer(ctx context.Context, containerID string) {
+	if d.mode == ModeStatic {
+		pid, err := strconv.Atoi(containerID)
+		E(err)
+		p, err := os.FindProcess(pid)
+		E(err)
+		err = p.Kill()
+		E(err)
+		psp, err := ps.FindProcess(pid)
+		if psp != nil {
+			log.Printf("Can't kill process")
+		}
+		return
+	}
 	err := d.cli.ContainerStop(ctx, containerID, nil)
 	E(err)
 }
@@ -278,7 +346,11 @@ func walkFnClosure(src string, tw *tar.Writer, buf *bytes.Buffer) filepath.WalkF
 }
 
 // BuildDockerImage builds a docker container using `conf`
-func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient) (string, error) {
+func (d *Docker) BuildDockerImage(ctx context.Context, conf map[string]string) (string, error) {
+	log.Println("Building", conf)
+	if d.mode == ModeStatic {
+		return "", nil
+	}
 	dockerFilePath := "./Dockerfile"
 
 	dockerFileReader, err := os.Open(dockerFilePath)
@@ -329,8 +401,8 @@ func BuildDockerImage(ctx context.Context, conf map[string]string, cli APIClient
 		return "", fmt.Errorf("unable to walk user provided context path %v: %v", UserProvidedContextPath, err)
 	}
 	dockerFileTarReader := bytes.NewReader(buf.Bytes())
-	log.Printf("building '%s'...\n", imageName)
-	imageBuildResponse, err := cli.ImageBuild(
+	log.Printf("Building '%s'...\n", imageName)
+	imageBuildResponse, err := d.cli.ImageBuild(
 		ctx,
 		dockerFileTarReader,
 		types.ImageBuildOptions{

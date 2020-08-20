@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -26,24 +27,48 @@ func E(err error) {
 }
 
 func main() {
-	log.Println("Version 0.1.1")
+	log.Println("Version 0.1.2")
 	dockerconf := map[string][]string{}
 	conf := map[string]string{}
 	labelconf := map[string]string{}
-	cli, err := client.NewEnvClient()
-	E(err)
-	ctx := context.Background()
-	d := Docker{cli: cli}
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "dashboard":
-			server(ctx, d, conf)
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	var mode string
+	fs.StringVar(&mode, "mode", "docker", "Mode: docker (default), static")
+	err := fs.Parse(os.Args[1:])
+	if err != nil {
+		panic(err)
+	}
+	//	log.Printf("Flags: %s %v", mode, fs)
+	env := os.Environ()
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			log.Printf("Env: %s", e)
+		}
+	}
+
+	var d Docker
+	ctx := context.Background()
+
+	switch mode {
+	case "docker":
+		cli, err := client.NewEnvClient()
+		E(err)
+		d = Docker{mode: ModeDocker, cli: cli}
+	case "static":
+		d = Docker{mode: ModeStatic}
+	}
+
+	if len(fs.Args()) > 0 {
+		switch fs.Args()[0] {
 		case "start":
 			traefik(ctx, d, dockerconf)
+		default:
+			log.Printf("can't process %v", fs.Args())
 		}
 		return
 	}
+	// deployment command (with docker) is default (legacy systems)
 	log.Println("Reading configuration...")
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")   // optionally look for config in the working directory
@@ -80,7 +105,7 @@ func main() {
 
 	log.Println("Creating docker container...")
 
-	name, err := BuildDockerImage(ctx, conf, d.cli)
+	name, err := d.BuildDockerImage(ctx, conf)
 	E(err)
 
 	d.Run(ctx, name, "", labelconf, dockerconf)
