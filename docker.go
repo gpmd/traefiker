@@ -161,11 +161,15 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 		links = append(links, l2)
 	}
 
+	if len(conf["restart"]) > 0 {
+		hostconfig.RestartPolicy = container.RestartPolicy{Name: conf["restart"][0]}
+	}
+
 	if len(conf["networks"]) > 0 {
 		hostconfig.NetworkMode = container.NetworkMode(conf["networks"][0])
 		nc = &network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
-				conf["networks"][0]: &network.EndpointSettings{
+				conf["networks"][0]: {
 					Links:   links,
 					Aliases: []string{imagename},
 				},
@@ -210,9 +214,7 @@ func (d *Docker) List() []types.Container {
 	containers, err := d.cli.ContainerList(context.Background(), types.ContainerListOptions{})
 	E(err)
 	d.list = []types.Container{}
-	for _, container := range containers {
-		d.list = append(d.list, container)
-	}
+	d.list = append(d.list, containers...)
 	return d.list
 }
 
@@ -226,6 +228,7 @@ func (d *Docker) StopContainer(ctx context.Context, containerID string) {
 		err = p.Kill()
 		E(err)
 		psp, err := ps.FindProcess(pid)
+		E(err)
 		if psp != nil {
 			log.Printf("Can't kill process")
 		}
@@ -395,23 +398,24 @@ func (d *Docker) BuildDockerImage(ctx context.Context, conf map[string]string) (
 		This directory is also the build context that is sent to the Docker daemon.
 		- https://docs.docker.com/compose/compose-file/#context
 	*/
+	log.Printf("a '%s'...\n", imageName)
 	UserProvidedContextPath := "."
 	err = filepath.Walk(UserProvidedContextPath, walkFnClosure(UserProvidedContextPath, tw, buf))
 	if err != nil {
 		return "", fmt.Errorf("unable to walk user provided context path %v: %v", UserProvidedContextPath, err)
 	}
+	log.Printf("b '%s'...\n", imageName)
 	dockerFileTarReader := bytes.NewReader(buf.Bytes())
 	log.Printf("Building '%s'...\n", imageName)
 	imageBuildResponse, err := d.cli.ImageBuild(
 		ctx,
 		dockerFileTarReader,
 		types.ImageBuildOptions{
-			//PullParent:     true,
 			//Squash:     true, currently only supported in experimental mode
 			Tags:           []string{imageName},
 			Remove:         true, //remove intermediary containers after build
-			NoCache:        true,
-			PullParent:     true,
+			NoCache:        false,
+			PullParent:     false,
 			SuppressOutput: false,
 			Dockerfile:     "./Dockerfile",
 			Context:        dockerFileTarReader,

@@ -3,7 +3,9 @@ all:
 	go build .
 
 linux:
-	GOOS=linux go build . && goupx traefiker
+	GOARCH=amd64 GOOS=linux go build .
 
 install: linux
-	scp traefiker blinker:blinker/
+	# scp traefiker blinker:blinker/
+	scp -C traefiker apio:live/
+	scp -C traefiker apio.staging:staging/
