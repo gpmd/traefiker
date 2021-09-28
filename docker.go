@@ -152,6 +152,12 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 		hostconfig.PortBindings = m
 	}
 
+	if len(conf["nanocpus"]) > 0 {
+		nano, _ := strconv.ParseInt(conf["nanocpus"][0], 10, 64)
+		log.Printf("NanoCPUS: %v", nano)
+		hostconfig.NanoCPUs = nano
+	}
+
 	links := []string{}
 	for _, l := range conf["links"] {
 		l2, err := filehelper.Template(l, running)
@@ -407,19 +413,20 @@ func (d *Docker) BuildDockerImage(ctx context.Context, conf map[string]string) (
 	log.Printf("b '%s'...\n", imageName)
 	dockerFileTarReader := bytes.NewReader(buf.Bytes())
 	log.Printf("Building '%s'...\n", imageName)
-	imageBuildResponse, err := d.cli.ImageBuild(
-		ctx,
-		dockerFileTarReader,
-		types.ImageBuildOptions{
-			//Squash:     true, currently only supported in experimental mode
-			Tags:           []string{imageName},
-			Remove:         true, //remove intermediary containers after build
-			NoCache:        false,
-			PullParent:     false,
-			SuppressOutput: false,
-			Dockerfile:     "./Dockerfile",
-			Context:        dockerFileTarReader,
-			AuthConfigs:    AuthConfigs})
+	c := types.ImageBuildOptions{
+		//Squash:     true, currently only supported in experimental mode
+		Tags:           []string{imageName},
+		Remove:         true, //remove intermediary containers after build
+		NoCache:        false,
+		PullParent:     false,
+		SuppressOutput: false,
+		Dockerfile:     "./Dockerfile",
+		Context:        dockerFileTarReader,
+		AuthConfigs:    AuthConfigs}
+	if conf["cpus"] != "" {
+		c.CPUSetCPUs = conf["cpus"]
+	}
+	imageBuildResponse, err := d.cli.ImageBuild(ctx, dockerFileTarReader, c)
 	if err != nil {
 		log.Fatal(err)
 	}
