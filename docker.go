@@ -158,6 +158,12 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 		hostconfig.NanoCPUs = nano
 	}
 
+	if len(conf["memorylimit"]) > 0 {
+		mem, _ := strconv.ParseInt(conf["memorylimit"][0], 10, 64)
+		log.Printf("Memory Limit: %v", mem)
+		hostconfig.Memory = mem
+	}
+
 	links := []string{}
 	for _, l := range conf["links"] {
 		l2, err := filehelper.Template(l, running)
