@@ -124,7 +124,7 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 	}
 
 	hostconfig := &container.HostConfig{
-		RestartPolicy: container.RestartPolicy{MaximumRetryCount: 0},
+		RestartPolicy: container.RestartPolicy{Name: "always"},
 		Mounts:        mm,
 	}
 
@@ -202,7 +202,7 @@ func (d *Docker) Run(ctx context.Context, image, imageurl string, labels map[str
 		&cfg,
 		hostconfig,
 		nc,
-		imagename+"_"+strconv.FormatInt(time.Now().UTC().Unix(), 32))
+		imagename+"_"+strconv.FormatInt(time.Now().UTC().UnixNano(), 32))
 	E(err)
 	err = d.cli.ContainerStart(ctx, cont.ID, types.ContainerStartOptions{})
 	E(err)

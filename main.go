@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -108,7 +109,16 @@ func main() {
 	name, err := d.BuildDockerImage(ctx, conf)
 	E(err)
 
-	d.Run(ctx, name, "", labelconf, dockerconf)
+	ii := 1
+	if conf["instances"] != "" {
+		ii, err = strconv.Atoi(conf["instances"])
+		if err != nil {
+			log.Printf("instances must be an integer, defaulting to 1")
+		}
+	}
+	for i := 0; i < ii; i++ {
+		d.Run(ctx, name, "", labelconf, dockerconf)
+	}
 
 	time.Sleep(2 * time.Second)
 
