@@ -14,6 +14,5 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/shoobyban/slog v0.0.0-20190209173919-7f513f7a44c1
 	github.com/spf13/viper v1.4.0
-	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297 // indirect
-	golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd // indirect
+	golang.org/x/net v0.7.0 // indirect
 )
